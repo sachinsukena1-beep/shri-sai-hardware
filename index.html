@@ -343,7 +343,7 @@
 const STORAGE_KEY = 'hardware_store_v1';
 const CART_KEY = 'hardware_cart_v1';
 const CUSTOMER_KEY = 'hardware_customer_v1';
-const DEFAULT_PASSWORD = 'SaiHwd@6142';
+const DEFAULT_PASSWORD = 'SaiHwd@9027';
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function p(name, base, price, mrp, pack, img){
@@ -454,7 +454,7 @@ function load(){
     // store contact number is managed here (kept in sync even if older data was saved)
     parsed.store.phone = DEFAULT_DATA.store.phone;
     parsed.store.whatsapp = DEFAULT_DATA.store.whatsapp;
-    if(parsed.password == null || parsed.password === 'admin123') parsed.password = DEFAULT_DATA.password;   // जुना डीफॉल्ट पासवर्ड बदलला
+    if(parsed.password == null || parsed.password === 'admin123' || parsed.password === 'SaiHwd@6142') parsed.password = DEFAULT_DATA.password;   // june default passwords badalla
     return parsed;
   }catch(e){ return structuredClone(DEFAULT_DATA); }
 }
