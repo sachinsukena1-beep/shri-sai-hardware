@@ -336,6 +336,8 @@
 
 <div id="toast" class="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 /* ============================================================
    Kirana Store — tabbed app with pack sizes (LocalStorage)
@@ -344,6 +346,13 @@ const STORAGE_KEY = 'hardware_store_v1';
 const CART_KEY = 'hardware_cart_v1';
 const CUSTOMER_KEY = 'hardware_customer_v1';
 const DEFAULT_PASSWORD = 'SaiHwd@9027';
+
+/* ---------- Firebase Realtime Database ----------
+   databaseURL रिकामा ठेवल्यास ॲप फक्त localStorage वापरेल. */
+const FIREBASE_CONFIG = {
+  databaseURL: "https://sach-1ec67-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+const FB_PATH = 'hardware';   // या ॲपचा डेटा या ठिकाणी साठेल
 
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function p(name, base, price, mrp, pack, img){
@@ -439,26 +448,68 @@ function mrpFor(it, label){ return Math.round(Number(it.mrp) * packMult(it, labe
 function baseLabel(it){ return it.base==='kg' ? 'kg' : it.base==='L' ? 'litre' : 'नग'; }
 
 /* ---------- persistence ---------- */
+function normalizeData(parsed){
+  if(!parsed || !parsed.store || !Array.isArray(parsed.categories)) return null;
+  parsed.categories.forEach(c=>c.products.forEach(it=>{
+    if(it.base==null) it.base = 'kg';
+    if(it.pack==null) it.pack = (it.base==='pc' ? 'packet' : (it.base==='L' ? '1 L' : '1 kg'));
+    if(it.img==null) it.img = '';
+    if(it.mrp==null) it.mrp = it.price;
+  }));
+  // store contact number is managed here (kept in sync even if older data was saved)
+  parsed.store.phone = DEFAULT_DATA.store.phone;
+  parsed.store.whatsapp = DEFAULT_DATA.store.whatsapp;
+  if(parsed.password == null || parsed.password === 'admin123' || parsed.password === 'SaiHwd@6142') parsed.password = DEFAULT_DATA.password;   // june default passwords badalla
+  return parsed;
+}
 function load(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return structuredClone(DEFAULT_DATA);
-    const parsed = JSON.parse(raw);
-    if(!parsed.store || !Array.isArray(parsed.categories)) throw 0;
-    parsed.categories.forEach(c=>c.products.forEach(it=>{
-      if(it.base==null) it.base = 'kg';
-      if(it.pack==null) it.pack = (it.base==='pc' ? 'packet' : (it.base==='L' ? '1 L' : '1 kg'));
-      if(it.img==null) it.img = '';
-      if(it.mrp==null) it.mrp = it.price;
-    }));
-    // store contact number is managed here (kept in sync even if older data was saved)
-    parsed.store.phone = DEFAULT_DATA.store.phone;
-    parsed.store.whatsapp = DEFAULT_DATA.store.whatsapp;
-    if(parsed.password == null || parsed.password === 'admin123' || parsed.password === 'SaiHwd@6142') parsed.password = DEFAULT_DATA.password;   // june default passwords badalla
-    return parsed;
+    return normalizeData(JSON.parse(raw)) || structuredClone(DEFAULT_DATA);
   }catch(e){ return structuredClone(DEFAULT_DATA); }
 }
-function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){ toast('डेटा सेव्ह झाला नाही'); } }
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){ toast('डेटा सेव्ह झाला नाही'); }
+  pushToCloud();
+}
+/* ---------- Firebase Realtime Database sync ---------- */
+let _fbDb = null;
+function initFirebase(){
+  if(!FIREBASE_CONFIG.databaseURL) return null;
+  if(typeof firebase === 'undefined' || !firebase.initializeApp) return null;
+  try{
+    if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDb = firebase.database();
+    return _fbDb;
+  }catch(e){ return null; }
+}
+async function pushToCloud(){
+  if(!_fbDb) return;
+  try{
+    await _fbDb.ref(FB_PATH).set({ store:data.store, categories:data.categories });
+  }catch(e){ toast('ऑनलाईन सेव्ह झाले नाही — स्थानिक कॉपी जतन आहे'); }
+}
+function subscribeCloud(){
+  if(!_fbDb) return;
+  _fbDb.ref(FB_PATH).on('value', function(snap){
+    const v = snap.val();
+    if(!v) return;
+    const parsed = normalizeData(v);
+    if(!parsed) return;
+    parsed.password = data.password;   // पासवर्ड क्लाउडमध्ये ठेवत नाही; स्थानिकच ठेवतो
+    data = parsed;
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(e){}
+    activeCat = data.categories[0] ? data.categories[0].id : null;
+    renderStore(); renderCategories(); renderProducts(); updateBadges();
+    if(screen==='cart') renderCart();
+    if(screen==='admin') renderAdminScreen();
+  }, function(err){ /* परवानगी / नेटवर्क अडचण — स्थानिक डेटाच वापर */ });
+}
+function bootCloud(){
+  if(!initFirebase()) return;
+  subscribeCloud();
+}
 function loadCart(){ try{ return JSON.parse(localStorage.getItem(CART_KEY)) || {}; }catch(e){ return {}; } }
 function saveCart(){ try{ localStorage.setItem(CART_KEY, JSON.stringify(cart)); }catch(e){} }
 function loadCustomer(){ try{ return JSON.parse(localStorage.getItem(CUSTOMER_KEY)) || {name:'',phone:'',address:''}; }catch(e){ return {name:'',phone:'',address:''}; } }
@@ -922,6 +973,7 @@ renderProducts();
 renderCart();
 updateBadges();
 go('home');
+bootCloud();
 </script>
 </body>
 </html>
